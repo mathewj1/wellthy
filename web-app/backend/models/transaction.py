@@ -1,0 +1,117 @@
+"""
+Data models for transaction tracking and analysis
+"""
+
+from pydantic import BaseModel, Field
+from typing import Optional, List, Dict, Any
+from datetime import datetime
+from enum import Enum
+
+class TransactionType(str, Enum):
+    """Transaction type classification based on actual data"""
+    REGULAR = "regular"
+    INTERNAL_TRANSFER = "internal_transfer"
+    INCOME = "income"
+
+class Transaction(BaseModel):
+    """Individual transaction record"""
+    id: str
+    amount: float = Field(..., description="Transaction amount in USD (positive or negative)")
+    description: str = Field(..., description="Transaction description")
+    category: str = Field(..., description="Transaction category from original data")
+    parent_category: Optional[str] = Field(None, description="Parent category from original data")
+    date: datetime
+    merchant: Optional[str] = None
+    account: Optional[str] = None
+    account_mask: Optional[str] = None
+    tags: List[str] = Field(default_factory=list)
+    notes: Optional[str] = None
+    transaction_type: TransactionType
+    status: Optional[str] = None
+    excluded: bool = False
+    recurring: Optional[str] = None
+    source: str = "csv"
+    
+    @property
+    def is_positive(self) -> bool:
+        """Check if transaction amount is positive"""
+        return self.amount > 0
+    
+    @property
+    def is_negative(self) -> bool:
+        """Check if transaction amount is negative"""
+        return self.amount < 0
+    
+    @property
+    def absolute_amount(self) -> float:
+        """Get absolute value of amount"""
+        return abs(self.amount)
+    
+    class Config:
+        json_encoders = {
+            datetime: lambda v: v.isoformat()
+        }
+
+class TransactionCategory(BaseModel):
+    """Transaction category with metadata"""
+    name: str
+    display_name: str
+    description: str
+    color: str = Field(..., description="Hex color for visualization")
+    icon: str = Field(..., description="Icon name for UI")
+    total_amount: float = 0.0
+    transaction_count: int = 0
+
+class TransactionQuery(BaseModel):
+    """Query parameters for filtering transactions"""
+    start_date: Optional[datetime] = None
+    end_date: Optional[datetime] = None
+    categories: Optional[List[str]] = None
+    transaction_types: Optional[List[TransactionType]] = None
+    min_amount: Optional[float] = None
+    max_amount: Optional[float] = None
+    search_text: Optional[str] = None
+    tags: Optional[List[str]] = None
+    include_excluded: bool = False
+
+class TransactionSummary(BaseModel):
+    """Summary statistics for transactions"""
+    total_regular_amount: float  # Only regular transactions
+    total_income_amount: float   # Only income transactions
+    net_amount: float            # Regular - Income (for spending analysis)
+    transaction_count: int
+    regular_count: int
+    income_count: int
+    transfer_count: int
+    average_amount: float
+    category_breakdown: Dict[str, Dict[str, float]]  # category -> {expenses, income, net}
+    monthly_trends: List[Dict[str, Any]]
+    top_merchants: List[Dict[str, Any]]
+    spending_velocity: Dict[str, float]  # Daily, weekly, monthly averages
+
+class MBAInsight(BaseModel):
+    """MBA-specific insights and recommendations"""
+    category: str
+    title: str
+    description: str
+    recommendation: str
+    data_support: Dict[str, Any]
+    confidence_score: float = Field(..., ge=0, le=1)
+    priority: str = Field(..., description="high, medium, low")
+
+class VisualizationConfig(BaseModel):
+    """Configuration for data visualizations"""
+    chart_type: str  # bar, line, pie, scatter, etc.
+    x_axis: str
+    y_axis: str
+    color_by: Optional[str] = None
+    group_by: Optional[str] = None
+    filters: Optional[Dict[str, Any]] = None
+    title: str
+    description: Optional[str] = None
+
+# Backward compatibility aliases
+Expense = Transaction
+ExpenseCategory = TransactionCategory
+ExpenseQuery = TransactionQuery
+ExpenseSummary = TransactionSummary
