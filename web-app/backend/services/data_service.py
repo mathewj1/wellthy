@@ -6,7 +6,7 @@ import pandas as pd
 import numpy as np
 from typing import List, Dict, Any, Optional
 from datetime import datetime, timedelta
-from ..models.transaction import Transaction, TransactionCategory, TransactionSummary, MBAInsight, TransactionQuery, TransactionType
+from models.transaction import Transaction, TransactionCategory, TransactionSummary, MBAInsight, TransactionQuery, TransactionType
 import json
 
 class DataService:
@@ -459,4 +459,163 @@ class DataService:
             "daily": total_amount / total_days if total_days > 0 else 0,
             "weekly": total_amount / total_weeks if total_weeks > 0 else 0,
             "monthly": total_amount / total_months if total_months > 0 else 0
+        }
+    
+    async def calculate_category_tag_overlap(self, target_tag: str, filters: Optional[TransactionQuery] = None) -> Dict[str, Any]:
+        """Calculate spending overlap between a specific tag and all categories - perfect for Venn diagrams"""
+        transactions = await self.get_transactions(filters or TransactionQuery())
+        
+        # Filter for transactions with the target tag
+        tagged_transactions = [
+            t for t in transactions 
+            if target_tag.lower() in [tag.lower() for tag in t.tags]
+        ]
+        
+        if not tagged_transactions:
+            return {
+                "target_tag": target_tag,
+                "total_tagged_amount": 0,
+                "category_overlaps": {},
+                "venn_data": []
+            }
+        
+        total_tagged_amount = sum(t.amount for t in tagged_transactions)
+        
+        # Calculate overlap with each category
+        category_overlaps = {}
+        venn_data = []
+        
+        # Group tagged transactions by category
+        category_groups = {}
+        for transaction in tagged_transactions:
+            category = transaction.category
+            if category not in category_groups:
+                category_groups[category] = []
+            category_groups[category].append(transaction)
+        
+        # Calculate overlaps and prepare Venn diagram data
+        for category, category_transactions in category_groups.items():
+            category_amount = sum(t.amount for t in category_transactions)
+            overlap_percentage = (category_amount / total_tagged_amount) * 100
+            
+            category_overlaps[category] = {
+                "amount": category_amount,
+                "transaction_count": len(category_transactions),
+                "percentage_of_tag": overlap_percentage
+            }
+            
+            # Venn diagram data structure
+            venn_data.append({
+                "set_name": f"{target_tag} ∩ {category.title()}",
+                "category": category,
+                "tag": target_tag,
+                "amount": category_amount,
+                "transaction_count": len(category_transactions),
+                "percentage": overlap_percentage,
+                "transactions": [
+                    {
+                        "id": t.id,
+                        "description": t.description,
+                        "amount": t.amount,
+                        "date": t.date.isoformat(),
+                        "merchant": t.merchant
+                    } for t in category_transactions
+                ]
+            })
+        
+        return {
+            "target_tag": target_tag,
+            "total_tagged_amount": total_tagged_amount,
+            "total_tagged_transactions": len(tagged_transactions),
+            "category_overlaps": category_overlaps,
+            "venn_data": sorted(venn_data, key=lambda x: x["amount"], reverse=True)
+        }
+    
+    async def calculate_multi_tag_category_overlap(self, tags: List[str], categories: List[str], filters: Optional[TransactionQuery] = None) -> Dict[str, Any]:
+        """Calculate complex overlaps between multiple tags and categories for advanced Venn analysis"""
+        transactions = await self.get_transactions(filters or TransactionQuery())
+        
+        # Create sets for each dimension
+        tag_sets = {}
+        category_sets = {}
+        
+        for tag in tags:
+            tag_sets[tag] = [
+                t for t in transactions 
+                if tag.lower() in [tag_name.lower() for tag_name in t.tags]
+            ]
+        
+        for category in categories:
+            category_sets[category] = [
+                t for t in transactions 
+                if t.category == category
+            ]
+        
+        # Calculate all possible intersections
+        overlaps = []
+        
+        for tag_name, tag_transactions in tag_sets.items():
+            for category_name, category_transactions in category_sets.items():
+                # Find intersection
+                intersection = [
+                    t for t in tag_transactions 
+                    if t in category_transactions
+                ]
+                
+                if intersection:
+                    overlap_amount = sum(t.amount for t in intersection)
+                    overlaps.append({
+                        "intersection": f"{tag_name} ∩ {category_name}",
+                        "tag": tag_name,
+                        "category": category_name,
+                        "amount": overlap_amount,
+                        "transaction_count": len(intersection),
+                        "transactions": intersection
+                    })
+        
+        return {
+            "tags": tags,
+            "categories": categories,
+            "overlaps": sorted(overlaps, key=lambda x: x["amount"], reverse=True),
+            "total_analyzed_transactions": len(transactions)
+        }
+    
+    async def get_available_tags(self, filters: Optional[TransactionQuery] = None) -> Dict[str, Any]:
+        """Get all available tags with usage statistics for user selection"""
+        transactions = await self.get_transactions(filters or TransactionQuery())
+        
+        tag_stats = {}
+        
+        for transaction in transactions:
+            for tag in transaction.tags:
+                if tag not in tag_stats:
+                    tag_stats[tag] = {
+                        "tag": tag,
+                        "transaction_count": 0,
+                        "total_amount": 0,
+                        "categories": set()
+                    }
+                
+                tag_stats[tag]["transaction_count"] += 1
+                tag_stats[tag]["total_amount"] += transaction.amount
+                tag_stats[tag]["categories"].add(transaction.category)
+        
+        # Convert to list and add category count
+        available_tags = []
+        for tag, stats in tag_stats.items():
+            available_tags.append({
+                "tag": tag,
+                "transaction_count": stats["transaction_count"],
+                "total_amount": stats["total_amount"],
+                "category_count": len(stats["categories"]),
+                "categories": list(stats["categories"])
+            })
+        
+        # Sort by total amount (most significant tags first)
+        available_tags.sort(key=lambda x: x["total_amount"], reverse=True)
+        
+        return {
+            "available_tags": available_tags,
+            "total_tags": len(available_tags),
+            "total_transactions": len(transactions)
         }

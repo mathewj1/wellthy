@@ -7,7 +7,7 @@ import httpx
 import asyncio
 from typing import List, Dict, Any, Optional
 from datetime import datetime, timedelta
-from ..utils.config import load_env, get_required_env, get_env
+from utils.config import load_env, get_required_env, get_env
 
 
 class CopilotServiceV2:

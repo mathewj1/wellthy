@@ -7,12 +7,12 @@ import os
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 import csv
-from ..models.transaction import Transaction, TransactionCategory, TransactionType
+from models.transaction import Transaction, TransactionCategory, TransactionType
 
 class CSVService:
     """Service for loading and processing expense data from CSV files"""
     
-    def __init__(self, data_directory: str = "data"):
+    def __init__(self, data_directory: str = "../data"):  # Look in parent directory
         self.data_directory = data_directory
         self.csv_file_path = os.path.join(data_directory, "transactions.csv")
         self.ensure_data_directory()

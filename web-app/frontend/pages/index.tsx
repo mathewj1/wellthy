@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import Head from 'next/head';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+import { CategoryPieChart, MonthlyTrendsChart, ScatterPlotChart, CategoryBarChart, VennDiagramChart } from '../components/PlotChart';
 import { Search, TrendingUp, DollarSign, BookOpen, Users, Home, Car, Utensils } from 'lucide-react';
 
 interface Expense {
@@ -20,32 +20,35 @@ interface ExpenseSummary {
   monthly_trends: Array<{ month: string; amount: number }>;
 }
 
-const categoryIcons = {
-  tuition: BookOpen,
-  books_supplies: BookOpen,
-  housing: Home,
-  food: Utensils,
-  transportation: Car,
-  networking: Users,
-  entertainment: TrendingUp,
-  health: TrendingUp,
-  technology: TrendingUp,
-  travel: TrendingUp,
-  other: TrendingUp,
+// Dynamic icon and color generation functions
+const getIconForCategory = (category: string) => {
+  // Map categories to appropriate icons based on keywords
+  const lowerCategory = category.toLowerCase();
+  if (lowerCategory.includes('car') || lowerCategory.includes('transport')) return Car;
+  if (lowerCategory.includes('food') || lowerCategory.includes('restaurant') || lowerCategory.includes('coffee') || lowerCategory.includes('groceries')) return Utensils;
+  if (lowerCategory.includes('home') || lowerCategory.includes('rent') || lowerCategory.includes('utilities')) return Home;
+  if (lowerCategory.includes('loan') || lowerCategory.includes('tuition')) return DollarSign;
+  if (lowerCategory.includes('education') || lowerCategory.includes('upskilling') || lowerCategory.includes('kellogg')) return BookOpen;
+  if (lowerCategory.includes('nightlife') || lowerCategory.includes('entertainment')) return Users;
+  return TrendingUp; // Default icon
 };
 
-const categoryColors = {
-  tuition: '#FF6B6B',
-  books_supplies: '#4ECDC4',
-  housing: '#45B7D1',
-  food: '#96CEB4',
-  transportation: '#FFEAA7',
-  networking: '#DDA0DD',
-  entertainment: '#98D8C8',
-  health: '#F7DC6F',
-  technology: '#BB8FCE',
-  travel: '#85C1E9',
-  other: '#D5DBDB',
+const generateColorForCategory = (category: string, index: number) => {
+  // Generate consistent colors based on category name
+  const colors = [
+    '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD', 
+    '#98D8C8', '#F7DC6F', '#BB8FCE', '#85C1E9', '#D5DBDB', '#FF9999',
+    '#CCCCCC', '#FFD93D', '#6BCB77', '#FFA07A', '#20B2AA', '#87CEEB',
+    '#4169E1', '#DA70D6', '#FF69B4', '#FFD700', '#FF6347', '#9370DB',
+    '#32CD32', '#FF1493', '#00CED1', '#FFB6C1', '#8A2BE2', '#DC143C'
+  ];
+  
+  // Use category name hash to get consistent color
+  let hash = 0;
+  for (let i = 0; i < category.length; i++) {
+    hash = category.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  return colors[Math.abs(hash) % colors.length];
 };
 
 export default function Home() {
@@ -56,6 +59,9 @@ export default function Home() {
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [aiQuery, setAiQuery] = useState('');
   const [aiResponse, setAiResponse] = useState('');
+  const [aiVisualizations, setAiVisualizations] = useState<any[]>([]);
+  const [aiDataPoints, setAiDataPoints] = useState<any[]>([]);
+  const [categories, setCategories] = useState<any>(null);
 
   useEffect(() => {
     fetchData();
@@ -63,13 +69,25 @@ export default function Home() {
 
   const fetchData = async () => {
     try {
-      const response = await fetch('http://localhost:8000/expenses');
+      const response = await fetch('http://localhost:8000/transactions');
       const data = await response.json();
       setExpenses(data);
       
-      const summaryResponse = await fetch('http://localhost:8000/expenses/summary');
+      const summaryResponse = await fetch('http://localhost:8000/transactions/summary');
       const summaryData = await summaryResponse.json();
-      setSummary(summaryData);
+      // Map backend field names to frontend expected names
+      setSummary({
+        total_amount: summaryData.total_regular_amount || 0,
+        transaction_count: summaryData.transaction_count || 0,
+        average_amount: summaryData.average_amount || 0,
+        category_breakdown: summaryData.category_breakdown || {},
+        monthly_trends: summaryData.monthly_trends || []
+      });
+
+      // Fetch dynamic categories
+      const categoriesResponse = await fetch('http://localhost:8000/categories');
+      const categoriesData = await categoriesResponse.json();
+      setCategories(categoriesData);
     } catch (error) {
       console.error('Error fetching data:', error);
     } finally {
@@ -91,6 +109,8 @@ export default function Home() {
       
       const data = await response.json();
       setAiResponse(data.answer);
+      setAiVisualizations(data.visualizations || []);
+      setAiDataPoints(data.data_points || []);
     } catch (error) {
       console.error('Error processing AI query:', error);
       setAiResponse('Sorry, I encountered an error processing your question.');
@@ -104,10 +124,10 @@ export default function Home() {
     return matchesSearch && matchesCategory;
   });
 
-  const categoryData = summary ? Object.entries(summary.category_breakdown).map(([category, amount]) => ({
-    name: category.replace('_', ' ').toUpperCase(),
-    value: amount,
-    color: categoryColors[category as keyof typeof categoryColors] || '#D5DBDB'
+  const categoryData = summary ? Object.entries(summary.category_breakdown).map(([category, data], index) => ({
+    name: category,
+    value: typeof data === 'number' ? data : data.net || data.regular || 0,
+    color: generateColorForCategory(category, index)
   })) : [];
 
   if (loading) {
@@ -156,7 +176,7 @@ export default function Home() {
                   <div className="ml-4">
                     <p className="text-sm font-medium text-gray-500">Total Spent</p>
                     <p className="text-2xl font-semibold text-gray-900">
-                      ${summary.total_amount.toLocaleString()}
+                      ${summary?.total_amount?.toLocaleString() || '0'}
                     </p>
                   </div>
                 </div>
@@ -168,7 +188,7 @@ export default function Home() {
                   <div className="ml-4">
                     <p className="text-sm font-medium text-gray-500">Transactions</p>
                     <p className="text-2xl font-semibold text-gray-900">
-                      {summary.transaction_count}
+                      {summary?.transaction_count || 0}
                     </p>
                   </div>
                 </div>
@@ -180,7 +200,7 @@ export default function Home() {
                   <div className="ml-4">
                     <p className="text-sm font-medium text-gray-500">Average</p>
                     <p className="text-2xl font-semibold text-gray-900">
-                      ${summary.average_amount.toFixed(2)}
+                      ${summary?.average_amount?.toFixed(2) || '0.00'}
                     </p>
                   </div>
                 </div>
@@ -192,7 +212,7 @@ export default function Home() {
                   <div className="ml-4">
                     <p className="text-sm font-medium text-gray-500">Categories</p>
                     <p className="text-2xl font-semibold text-gray-900">
-                      {Object.keys(summary.category_breakdown).length}
+                      {summary?.category_breakdown ? Object.keys(summary.category_breakdown).length : 0}
                     </p>
                   </div>
                 </div>
@@ -223,6 +243,67 @@ export default function Home() {
                 <p className="text-gray-700">{aiResponse}</p>
               </div>
             )}
+            
+            {/* Render visualizations */}
+            {aiVisualizations.map((viz, index) => (
+              <div key={index} className="mt-6">
+                {viz.chart_type === 'tag_selector' && (
+                  <div className="bg-white rounded-lg shadow p-6">
+                    <h3 className="text-lg font-semibold mb-4">{viz.title}</h3>
+                    <p className="text-gray-600 mb-4">{viz.description}</p>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {viz.available_options?.map((option: any, i: number) => (
+                        <button
+                          key={i}
+                          onClick={() => {
+                            setAiQuery(`Show me "${option.tag}" breakdown`);
+                            handleAiQuery();
+                          }}
+                          className="text-left p-4 border rounded-lg hover:bg-blue-50 transition-colors"
+                        >
+                          <div className="font-semibold">{option.tag}</div>
+                          <div className="text-sm text-gray-600">
+                            ${option.total_amount.toFixed(2)} • {option.transaction_count} transactions
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                
+                {viz.chart_type === 'venn' && (
+                  <div className="bg-white rounded-lg shadow p-6">
+                    <h3 className="text-lg font-semibold mb-4">{viz.title}</h3>
+                    <p className="text-gray-600 mb-4">{viz.description}</p>
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                      {/* Venn-style visualization */}
+                      <div>
+                        <h4 className="font-medium mb-2">Category Overlap</h4>
+                        <VennDiagramChart data={aiDataPoints.slice(0, 3).map((point: any) => ({
+                          name: point.category,
+                          value: point.amount,
+                          color: generateColorForCategory(point.category, 0)
+                        }))} />
+                      </div>
+                      {/* Data breakdown */}
+                      <div>
+                        <h4 className="font-medium mb-2">Breakdown</h4>
+                        <div className="space-y-2">
+                          {aiDataPoints.map((point: any, i: number) => (
+                            <div key={i} className="flex justify-between p-3 bg-gray-50 rounded">
+                              <span className="font-medium">{point.category}</span>
+                              <span className="text-gray-600">
+                                ${point.amount.toFixed(2)} ({point.percentage.toFixed(1)}%)
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))}
           </div>
 
           {/* Charts */}
@@ -230,40 +311,32 @@ export default function Home() {
             {/* Category Breakdown */}
             <div className="bg-white rounded-lg shadow p-6">
               <h3 className="text-lg font-semibold text-gray-900 mb-4">Spending by Category</h3>
-              <ResponsiveContainer width="100%" height={300}>
-                <PieChart>
-                  <Pie
-                    data={categoryData}
-                    cx="50%"
-                    cy="50%"
-                    labelLine={false}
-                    label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                    outerRadius={80}
-                    fill="#8884d8"
-                    dataKey="value"
-                  >
-                    {categoryData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.color} />
-                    ))}
-                  </Pie>
-                  <Tooltip formatter={(value) => [`$${value}`, 'Amount']} />
-                </PieChart>
-              </ResponsiveContainer>
+              {categoryData.length > 0 ? (
+                <CategoryBarChart data={categoryData} />
+              ) : (
+                <div className="h-64 flex items-center justify-center text-gray-500">
+                  No category data available
+                </div>
+              )}
             </div>
 
             {/* Monthly Trends */}
             {summary && summary.monthly_trends.length > 0 && (
               <div className="bg-white rounded-lg shadow p-6">
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">Monthly Spending Trends</h3>
-                <ResponsiveContainer width="100%" height={300}>
-                  <BarChart data={summary.monthly_trends}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="month" />
-                    <YAxis />
-                    <Tooltip formatter={(value) => [`$${value}`, 'Amount']} />
-                    <Bar dataKey="amount" fill="#3B82F6" />
-                  </BarChart>
-                </ResponsiveContainer>
+                <MonthlyTrendsChart data={summary.monthly_trends} />
+              </div>
+            )}
+          </div>
+
+          {/* Advanced Visualizations */}
+          <div className="bg-white rounded-lg shadow p-6 mb-8">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Transaction Patterns</h3>
+            {expenses.length > 0 ? (
+              <ScatterPlotChart data={expenses.slice(0, 500)} />
+            ) : (
+              <div className="h-64 flex items-center justify-center text-gray-500">
+                No transaction data available
               </div>
             )}
           </div>
@@ -292,9 +365,9 @@ export default function Home() {
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 >
                   <option value="all">All Categories</option>
-                  {Object.keys(categoryColors).map(category => (
+                  {categories && categories.categories && categories.categories.map((category: string) => (
                     <option key={category} value={category}>
-                      {category.replace('_', ' ').toUpperCase()}
+                      {category}
                     </option>
                   ))}
                 </select>
@@ -330,8 +403,8 @@ export default function Home() {
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
                   {filteredExpenses.map((expense) => {
-                    const IconComponent = categoryIcons[expense.category as keyof typeof categoryIcons] || TrendingUp;
-                    const color = categoryColors[expense.category as keyof typeof categoryColors] || '#D5DBDB';
+                    const IconComponent = getIconForCategory(expense.category);
+                    const color = generateColorForCategory(expense.category, 0);
                     
                     return (
                       <tr key={expense.id} className="hover:bg-gray-50">
@@ -345,7 +418,7 @@ export default function Home() {
                           <div className="flex items-center">
                             <IconComponent className="h-4 w-4 mr-2" style={{ color }} />
                             <span className="text-sm text-gray-900">
-                              {expense.category.replace('_', ' ').toUpperCase()}
+                              {expense.category}
                             </span>
                           </div>
                         </td>

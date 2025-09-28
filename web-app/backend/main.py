@@ -11,13 +11,13 @@ from typing import List, Optional, Dict, Any
 import os
 from dotenv import load_dotenv
 
-from .services.csv_service import CSVService
-from .services.llm_service import LLMService
-from .services.data_service import DataService
-from .models.transaction import Transaction, TransactionCategory, TransactionQuery, TransactionType
+from services.csv_service import CSVService
+from services.llm_service import LLMService
+from services.data_service import DataService
+from models.transaction import Transaction, TransactionCategory, TransactionQuery, TransactionType
 
-# Load environment variables
-load_dotenv()
+# Load environment variables from parent directory
+load_dotenv(os.path.join(os.path.dirname(__file__), '..', '.env'))
 
 app = FastAPI(
     title="MBA Expense Explorer",
@@ -36,8 +36,8 @@ app.add_middleware(
 
 # Initialize services
 csv_service = CSVService()
-llm_service = LLMService()
 data_service = DataService()
+llm_service = LLMService(data_service=data_service)  # Inject data service
 
 # Pydantic models for API
 class QueryRequest(BaseModel):
@@ -134,6 +134,7 @@ async def get_mba_insights():
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @app.get("/data/sync")
 async def sync_csv_data():
     """Load data from CSV file"""
@@ -157,6 +158,41 @@ async def upload_csv_data(file: UploadFile = File(...)):
         transactions = csv_service.load_transactions_from_csv(file_path)
         
         return {"message": f"CSV uploaded and processed successfully", "records": len(transactions)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/categories")
+async def get_categories():
+    """Get all categories and parent categories from the data"""
+    try:
+        transactions = data_service.get_transactions()
+        
+        categories = set()
+        parent_categories = set()
+        parent_to_children = {}
+        category_counts = {}
+        
+        for t in transactions:
+            cat = t.category
+            parent_cat = t.parent_category
+            
+            categories.add(cat)
+            category_counts[cat] = category_counts.get(cat, 0) + 1
+            
+            if parent_cat:
+                parent_categories.add(parent_cat)
+                if parent_cat not in parent_to_children:
+                    parent_to_children[parent_cat] = {}
+                if cat not in parent_to_children[parent_cat]:
+                    parent_to_children[parent_cat][cat] = 0
+                parent_to_children[parent_cat][cat] += 1
+        
+        return {
+            "categories": sorted(list(categories)),
+            "parent_categories": sorted(list(parent_categories)),
+            "hierarchy": {parent: dict(children) for parent, children in parent_to_children.items()},
+            "category_counts": category_counts
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

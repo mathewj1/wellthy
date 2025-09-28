@@ -21,8 +21,7 @@ psycopg2-binary==2.9.9
 httpx==0.25.2
 requests==2.32.3
 
-# CORS & Security
-python-cors==1.7.0
+# CORS & Security (CORS is handled by FastAPI middleware)
 python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
 
