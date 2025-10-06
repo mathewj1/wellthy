@@ -37,25 +37,6 @@ export const PlotChart: React.FC<PlotChartProps> = ({ data, options, className =
 };
 
 // Specific chart components using Observable Plot
-export const CategoryPieChart: React.FC<{ data: any[] }> = ({ data }) => {
-  const options = {
-    width: 400,
-    height: 300,
-    color: { legend: true },
-    marks: [
-      Plot.arc(data, {
-        innerRadius: 40,
-        outerRadius: 120,
-        startAngle: 0,
-        endAngle: (d: any) => (d.value / data.reduce((sum, item) => sum + item.value, 0)) * 2 * Math.PI,
-        fill: "name",
-        title: (d: any) => `${d.name}: $${d.value.toLocaleString()}`,
-      })
-    ]
-  };
-
-  return <PlotChart data={data} options={options} className="w-full" />;
-};
 
 export const MonthlyTrendsChart: React.FC<{ data: any[] }> = ({ data }) => {
   const options = {

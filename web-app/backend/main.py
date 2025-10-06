@@ -165,7 +165,10 @@ async def upload_csv_data(file: UploadFile = File(...)):
 async def get_categories():
     """Get all categories and parent categories from the data"""
     try:
-        transactions = data_service.get_transactions()
+        # Create empty filters to get all transactions
+        from models.transaction import TransactionQuery
+        empty_filters = TransactionQuery()
+        transactions = await data_service.get_transactions(empty_filters)
         
         categories = set()
         parent_categories = set()
@@ -192,6 +195,35 @@ async def get_categories():
             "parent_categories": sorted(list(parent_categories)),
             "hierarchy": {parent: dict(children) for parent, children in parent_to_children.items()},
             "category_counts": category_counts
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/tags")
+async def get_tags():
+    """Get all unique tags from the data, excluding system tags"""
+    try:
+        # Create empty filters to get all transactions
+        from models.transaction import TransactionQuery
+        empty_filters = TransactionQuery()
+        transactions = await data_service.get_transactions(empty_filters)
+        
+        all_tags = []
+        tag_counts = {}
+        
+        for t in transactions:
+            for tag in t.tags:
+                # Filter out system tags
+                if tag and tag != 'nan' and not tag.startswith('status:'):
+                    all_tags.append(tag)
+                    tag_counts[tag] = tag_counts.get(tag, 0) + 1
+        
+        unique_tags = sorted(list(set(all_tags)))
+        
+        return {
+            "tags": unique_tags,
+            "tag_counts": tag_counts,
+            "total_tags": len(unique_tags)
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

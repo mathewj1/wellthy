@@ -27,8 +27,9 @@ class DataService:
         transactions = self._load_transaction_data()
         
         # Apply filters
+        # Filter by excluded status, but always include income transactions
         if not filters.include_excluded:
-            transactions = [t for t in transactions if not t.excluded]
+            transactions = [t for t in transactions if not t.excluded or t.transaction_type == TransactionType.INCOME]
         
         if filters.start_date:
             transactions = [t for t in transactions if t.date >= filters.start_date]
@@ -124,7 +125,7 @@ class DataService:
         
         total_regular = sum(t.amount for t in regular_transactions)
         total_income = sum(t.amount for t in income_transactions)
-        net_amount = total_regular - total_income  # Regular spending minus income
+        net_amount = total_regular + total_income  # Expenses (positive) + Income (negative) = Net spending
         
         transaction_count = len(transactions)
         average_amount = sum(t.absolute_amount for t in transactions) / transaction_count if transaction_count > 0 else 0
@@ -182,19 +183,51 @@ class DataService:
             "question": question
         }
     
+    def _detect_mba_tags(self, transactions: List[Transaction]) -> List[str]:
+        """Dynamically detect MBA-related tags from the data"""
+        all_tags = []
+        for t in transactions:
+            all_tags.extend([tag.lower() for tag in t.tags])
+        
+        tag_counts = {}
+        for tag in all_tags:
+            tag_counts[tag] = tag_counts.get(tag, 0) + 1
+        
+        # Look for MBA-related keywords in tags
+        mba_keywords = ['kellogg', 'mba', 'school', 'university', 'education', 'student', 'academic']
+        mba_tags = []
+        
+        for tag, count in tag_counts.items():
+            # Skip system tags
+            if tag == 'nan' or tag.startswith('status:'):
+                continue
+                
+            # Check if tag contains MBA-related keywords
+            for keyword in mba_keywords:
+                if keyword in tag.lower():
+                    mba_tags.append(tag)
+                    break
+        
+        return mba_tags
+    
     async def get_mba_insights(self) -> List[MBAInsight]:
         """Get MBA-specific insights and recommendations based on Kellogg-tagged transactions grouped by unique tags"""
         transactions = self._load_transaction_data()
         # Only analyze regular transactions for insights
         regular_transactions = [t for t in transactions if t.transaction_type == TransactionType.REGULAR]
         
-        # Filter for MBA-related transactions using Kellogg tag
-        mba_transactions = [t for t in regular_transactions if "kellogg" in [tag.lower() for tag in t.tags]]
+        # Filter for MBA-related transactions using dynamically detected tags
+        mba_tags = self._detect_mba_tags(regular_transactions)
+        mba_transactions = []
+        for t in regular_transactions:
+            transaction_tags_lower = [tag.lower() for tag in t.tags]
+            if any(mba_tag in transaction_tags_lower for mba_tag in mba_tags):
+                mba_transactions.append(t)
         
         insights = []
         
         if not mba_transactions:
-            # If no Kellogg-tagged transactions, provide general insights
+            # If no MBA-tagged transactions, provide general insights
             return self._get_general_insights(regular_transactions)
         
         # Analyze total MBA spending
@@ -202,7 +235,7 @@ class DataService:
         insights.append(MBAInsight(
             category="mba_total",
             title="Total MBA Investment",
-            description=f"Total Kellogg-related spending: ${total_mba_spending:,.2f}",
+            description=f"Total MBA-related spending: ${total_mba_spending:,.2f}",
             recommendation="Track your MBA investment to ensure you're getting value for your money",
             data_support={"total_amount": total_mba_spending, "transaction_count": len(mba_transactions)},
             confidence_score=0.95,
@@ -278,20 +311,23 @@ class DataService:
         return insights
     
     def _group_mba_transactions_by_tags(self, mba_transactions: List[Transaction], all_transactions: List[Transaction]) -> Dict[str, List[Transaction]]:
-        """Group MBA transactions by their tags, excluding Kellogg tag"""
+        """Group MBA transactions by their tags, excluding primary MBA tags"""
         groups = {}
         general_activities = []
         
+        # Get the detected MBA tags to exclude them from grouping
+        mba_tags = [tag.lower() for tag in self._detect_mba_tags(all_transactions)]
+        
         for transaction in mba_transactions:
-            # Get non-Kellogg tags for this transaction
-            non_kellogg_tags = [tag.lower() for tag in transaction.tags if tag.lower() != "kellogg"]
+            # Get non-MBA tags for this transaction
+            non_mba_tags = [tag.lower() for tag in transaction.tags if tag.lower() not in mba_tags]
             
-            if not non_kellogg_tags:
+            if not non_mba_tags:
                 # No other tags, add to general activities
                 general_activities.append(transaction)
             else:
-                # Use the first non-Kellogg tag as the group name
-                group_tag = non_kellogg_tags[0]
+                # Use the first non-MBA tag as the group name
+                group_tag = non_mba_tags[0]
                 
                 if group_tag not in groups:
                     groups[group_tag] = []
@@ -304,7 +340,7 @@ class DataService:
         return groups
     
     def _get_general_insights(self, regular_transactions: List[Transaction]) -> List[MBAInsight]:
-        """Fallback insights when no Kellogg-tagged transactions are found"""
+        """Fallback insights when no MBA-tagged transactions are found"""
         insights = []
         
         # Analyze tuition spending

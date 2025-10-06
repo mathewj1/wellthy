@@ -80,7 +80,7 @@ class TransactionQuery(BaseModel):
     max_amount: Optional[float] = None
     search_text: Optional[str] = None
     tags: Optional[List[str]] = None
-    include_excluded: bool = False
+    include_excluded: bool = True
 
 # Aggregated analytics - pre-computed statistics for dashboard display
 # Powers summary cards, charts, and trend analysis in the frontend
